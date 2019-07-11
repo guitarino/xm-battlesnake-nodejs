@@ -21,7 +21,7 @@ router.post("/start", function(req, res) {
 router.post("/move", function(req, res) {
   // NOTE: Do something here to generate your move
   //console.log(req.body)
-  let move = findFood(req.body);
+  let move = getMove(req.body);
   // Response data
   var data = {
     move: move, // one of: ['up','down','left','right']
@@ -30,10 +30,6 @@ router.post("/move", function(req, res) {
 
   return res.json(data);
 });
-
-function getMove(gameState) {
-  return;
-}
 
 function getMySnake(gameState) {
   return getSnake(gameState, gameState.you);
@@ -44,44 +40,61 @@ function getSnake(gameState, id) {
   return snake;
 }
 
-function findFood(gameState) {
-  let mySnake = getMySnake(gameState);
-  let head = mySnake.coords[0];
+function getMove(gameState) {
+  let nextDirection = getNextPreferredDirection(gameState);
+  let isDangerous = determineDangerous(gameState);
 
-  const { width, height, snakes } = gameState;
-
-  const isBadMove = isDistanceZero(mySnake, width, height, snakes);
-
-  if (gameState.food[0][0] < head[0] && !isBadMove("left")) {
-    move = "left";
+  if (!isDangerous(nextDirection)) {
+    return nextDirection;
   }
 
-  if (gameState.food[0][0] > head[0] && !isBadMove("right")) {
-    move = "right";
+  if (!isDangerous("left")) {
+    return "left";
   }
 
-  if (gameState.food[0][1] < head[1] && !isBadMove("up")) {
-    move = "up";
+  if (!isDangerous("right")) {
+    return "right";
   }
 
-  if (gameState.food[0][1] > head[1] && !isBadMove("down")) {
-    move = "down";
+  if (!isDangerous("up")) {
+    return "up";
   }
 
-  return move || "up";
-}
+  if (!isDangerous("down")) {
+    return "down";
+  }
 
-function isDistanceZero(mySnake, width, height, snakes) {
-  return function(direction) {
-    const distanceToWalls = howManySaveMovesToWalls(mySnake, width, height);
-    const distanceToSnakesAndWalls = accountForSnakes(
-      mySnake,
-      snakes,
-      distanceToWalls
-    );
-    const distance = distanceToSnakesAndWalls[direction];
-    return distance === 0;
-  };
+  const distanceToWalls = howManySaveMovesToWalls(mySnake, width, height);
+  const distanceToSnakesAndWalls = accountForSnakes(
+    mySnake,
+    snakes,
+    distanceToWalls
+  );
+
+  let nextMove = "left";
+  let nextSteps = 0;
+
+  if (distanceToSnakesAndWalls.left > 0) {
+    nextMove = "left";
+    nextSteps = distanceToSnakesAndWalls.left;
+  }
+
+  if (distanceToSnakesAndWalls.right > nextSteps) {
+    nextMove = "right";
+    nextSteps = distanceToSnakesAndWalls.right;
+  }
+
+  if (distanceToSnakesAndWalls.down > nextSteps) {
+    nextMove = "down";
+    nextSteps = distanceToSnakesAndWalls.down;
+  }
+
+  if (distanceToSnakesAndWalls.up > nextSteps) {
+    nextMove = "up";
+    nextSteps = distanceToSnakesAndWalls.up;
+  }
+
+  return nextMove;
 }
 
 function getHead(snake) {
@@ -110,9 +123,11 @@ function howManySaveMovesToWalls(mySnake, width, height) {
   };
 }
 
-function determineDangerous(mySnake, snakes, width, height) {
-  function isDangerous(direction) {
-    for (let i = 0; i < 10; i++) {
+function determineDangerous(gameState) {
+  let mySnake = getMySnake(gameState);
+  let { snakes, width, height } = gameState;
+  return function isDangerous(direction) {
+    for (let i = 0; i < 30; i++) {
       const distanceToWalls = howManySaveMovesToWalls(mySnake, width, height);
       const distanceToSnakesAndWalls = accountForSnakes(
         mySnake,
@@ -120,47 +135,71 @@ function determineDangerous(mySnake, snakes, width, height) {
         distanceToWalls
       );
       const distance = distanceToSnakesAndWalls[direction];
-      if (
-        distance.up === 0 &&
-        distance.down === 0 &&
-        distance.left === 0 &&
-        distance.right === 0
-      ) {
+      if (distance === 0) {
         return true;
       }
-      const direction = getNextPreferredDirection();
-      const nextState = getNextState(direction);
+      const nextDirection = getNextPreferredDirection(gameState);
+      const nextState = getNextState(nextDirection, mySnake, snakes);
       mySnake = nextState.mySnake;
       snakes = nextState.snakes;
     }
     return false;
-  }
+  };
 }
 
-function getNextPreferredDirection() {
-  if (health_points < 30) {
-    return getPreferredFoodDirection();
-  }
+function getNextPreferredDirection(gameState) {
+  return getPreferredFoodDirection(gameState);
+  // if (health_points < 30) {
+  //   return
+  // }
 }
 
-// function getPreferredFoodDirection() {
-//   let foodCoord = gameState.food[0];
-//   if (get[0] < head[0] && !isBadMove("left")) {
-//     move = "left";
-//   }
+function getNextState(nextDirection, myOldSnake, oldSnakes) {
+  const mySnake = deepcopy(myOldSnake);
+  const snakes = deepcopy(oldSnakes);
+  mySnake.coords.pop();
+  if (nextDirection === "up") {
+    mySnake.coords.unshift([mySnake.coords[0], mySnake.coords[1] - 1]);
+  }
+  if (nextDirection === "down") {
+    mySnake.coords.unshift([mySnake.coords[0], mySnake.coords[1] + 1]);
+  }
+  if (nextDirection === "right") {
+    mySnake.coords.unshift([mySnake.coords[0] + 1, mySnake.coords[1]]);
+  }
+  if (nextDirection === "left") {
+    mySnake.coords.unshift([mySnake.coords[0] - 1, mySnake.coords[1]]);
+  }
+  for (let i = 0; i < snakes.length; i++) {
+    snakes[i].coords.pop();
+  }
+  return { mySnake, snakes };
+}
 
-//   if (gameState.food[0][0] > head[0] && !isBadMove("right")) {
-//     move = "right";
-//   }
+function getPreferredFoodDirection(gameState) {
+  let foodCoord = gameState.food[0];
+  let mySnake = getMySnake(gameState);
+  let head = getHead(mySnake);
+  let move;
 
-//   if (gameState.food[0][1] < head[1] && !isBadMove("up")) {
-//     move = "up";
-//   }
+  if (getX(foodCoord) < getX(head)) {
+    move = "left";
+  }
 
-//   if (gameState.food[0][1] > head[1] && !isBadMove("down")) {
-//     move = "down";
-//   }
-// }
+  if (getX(foodCoord) > getX(head)) {
+    move = "right";
+  }
+
+  if (getY(foodCoord) < getY(head)) {
+    move = "up";
+  }
+
+  if (getY(foodCoord) > getY(head)) {
+    move = "down";
+  }
+
+  return move;
+}
 
 function accountForSnakes(mySnake, snakes, distanceToWalls) {
   const head = getHead(mySnake);
